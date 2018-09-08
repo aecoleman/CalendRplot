@@ -16,52 +16,6 @@ PlotCalendarHeatmap <- function(data){
 
   end.date <- as.Date( sprintf('%04d-01-01', max(data$year) ) )
 
-  timeperiodbndry <-
-    out.fy[, .(X_B = as.numeric(min(ORIG_CONTRACT_WEEK)) - 3.5,
-               X_E = as.numeric(max(ORIG_CONTRACT_WEEK)) + 3.5 ),
-           keyby = .(RSM_FY, RSM_QTR, RSM_MONTH, WDAY)
-           ][, group.id := sprintf('Y%04.0fQ%01.0fM%02.0f', RSM_FY, RSM_QTR, RSM_MONTH)]
-
-  timeperiodbndry.path <-
-    rbindlist(
-      list(timeperiodbndry[,.(Y = max(as.numeric(WDAY)) + 0.5,
-                              type = 'B'),
-                           by = .(group.id, RSM_FY, RSM_QTR, RSM_MONTH, X = X_B)],
-           timeperiodbndry[,.(Y = min(as.numeric(WDAY)) - 0.5,
-                              type = 'B'),
-                           by = .(group.id, RSM_FY, RSM_QTR, RSM_MONTH, X = X_B)],
-           timeperiodbndry[,.(Y = max(as.numeric(WDAY)) + 0.5,
-                              type = 'E'),
-                           by = .(group.id, RSM_FY, RSM_QTR, RSM_MONTH, X = X_E)],
-           timeperiodbndry[,.(Y = min(as.numeric(WDAY)) - 0.5,
-                              type = 'E'),
-                           by = .(group.id, RSM_FY, RSM_QTR, RSM_MONTH, X = X_E)]) )
-
-  timeperiodbndry.path[type == 'B',
-                       Rank := frankv(.SD, cols = c('X','Y'), order = 1),
-                       by = .(group.id),
-                       .SDcols = c('X', 'Y')]
-
-  maxRank <- timeperiodbndry.path[, max(Rank, na.rm = TRUE)]
-
-  timeperiodbndry.path[type == 'E',
-                       Rank := maxRank + frankv(.SD, cols = c('X','Y'), order = -1),
-                       by = .(group.id),
-                       .SDcols = c('X', 'Y')]
-
-  maxRank <- timeperiodbndry.path[, max(Rank, na.rm = TRUE)]
-
-  setkeyv(timeperiodbndry.path, cols = c('group.id', 'type', 'Rank'))
-
-  timeperiodbndry.path <-
-    rbindlist(
-      list(timeperiodbndry.path,
-           timeperiodbndry.path[Rank == 1,
-                                .(group.id, RSM_FY, RSM_QTR, RSM_MONTH,
-                                  X, Y, type, Rank = maxRank + 1)] ) )
-
-  setkeyv(timeperiodbndry.path, cols = c('group.id', 'Rank'))
-
   out <-
     ggplot(out.fy) +
     geom_tile(aes(x = ORIG_CONTRACT_WEEK,
@@ -108,9 +62,31 @@ PlotCalendarHeatmap <- function(data){
 }
 
 
-.GetBoundaries <- function(dates){
+#' GetBoundaries
+#'
+#' This function takes a set of dates and returns the set of coordinates that
+#' can be used to draw a polygon around the specified set of dates when arranged
+#' in a grid as in the \code{CalendarHeatmap} function.
+#'
+#' @param dates Date, the dates that belong to the interval. Can also pass just
+#' the first and last date.
+#' @param first logical, is this the first of a set of intervals? When TRUE, the
+#' function will return a path that encloses the dates. When \code{FALSE}, the function
+#' will return a path that encloses the dates on 3 sides only. This is useful
+#' because it prevents overplotting when one interval's right boundary is
+#' another interval's left boundary.
+#'
+#' @return data.frame, containing x and y values to be used in a call to the
+#' \code{ggplot::geom_path} function
+#' @export
+#'
+.GetBoundaries <- function(dates, first = FALSE){
 
-  df <- data.frame( 'date' = dates,
+  dates <-
+
+  df <- data.frame( 'date' = seq.Date( from = min(dates),
+                                       to = max(dates),
+                                       by = 'day' ),
                     'week' = lubridate::floor_date(dates, unit = 'week'),
                     'wday' = forcats::fct_rev(lubridate::wday(dates,
                                                               label = TRUE)))
@@ -128,16 +104,27 @@ PlotCalendarHeatmap <- function(data){
 
   minWD.maxWK <- min(df$wday[df$week == maxWK])
 
-  path <- data.frame( 'x' = c( rep(minWK, 2),
-                               rep(minWK + 7, 2),
+  # Creates top, right side, and bottom of boundary
+  path <- data.frame( 'x' = c( minWK + 7,
                                rep(maxWK, 2),
                                rep(maxWK - 7, 2),
                                minWK ),
-                      'y' = c(min(weekdays),
-                              rep(maxWD.minWK, 2),
-                              rep( max(weekdays), 2),
-                              rep(minWD.maxWK, 2),
-                              rep( min(weekdays), 2) ) )
+                      'y' = c( rep( max(weekdays), 2),
+                               rep(minWD.maxWK, 2),
+                               rep( min(weekdays), 2) ) )
+
+
+  if( first == TRUE ){
+
+    # Adds left side of boundary to path if argument 'first' is TRUE
+    path <- rbind(
+      data.frame( 'x' = c( rep(minWK, 2),
+                               minWK + 7 ),
+                  'y' = c(min(weekdays),
+                          rep(maxWD.minWK, 2) ) ),
+      path )
+
+  }
 
   return( path )
 
