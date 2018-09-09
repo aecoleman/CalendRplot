@@ -1,54 +1,97 @@
-
+#' PlotCalendarHeatmap
+#'
+#' @param data data.frame, which must have a column named \code{date} containing
+#' dates, and at least one other column.
+#'
+#' @return
+#' @export
+#'
+#' @examples
 PlotCalendarHeatmap <- function(data){
 
-  data$year <- lubridate::year(data$date)
+  #TODO: Add ability to specify which columns to use for aesthetics:
+  # - Fill
+  # - Color (Maybe?)
+  # - Size
+  # - Alpha
 
-  data$month <- lubridate::month(data$date)
+  #TODO: Add option for user to specify that they have included columns meant
+  # for grouping and/or faceting
 
-  data$week <- lubridate::floor_date(data$date,
+  # TODO: Add considerations for if the user has included their own groupings
+
+  # Get the first day of the first month for which data is supplied
+  start.date <-
+    as.Date( lubridate::floor_date( min(data$date), unit = 'month' ) )
+
+  # Get the last day of the last month for which data is supplied, by finding
+  # the first day of the first month after the provided dates and then
+  # subtracting one day
+  end.date <-
+    as.Date( lubridate::ceiling_date( max(data$date), unit = 'month' ) - 1)
+
+  # Make data.frame with all days, to be joined with user supplied data
+  plot.data <- data.frame( 'date' = seq.Date( from = start.date,
+                                              to = end.date,
+                                              by = 'day' ) )
+
+  # Merge list of all days with the user supplied data
+  plot.data <- merge( plot.data,
+                      data,
+                      by = 'date',
+                      all = TRUE)
+
+  # Create year column, for grouping
+  plot.data$year <- lubridate::year(plot.data$date)
+
+  # Create month column, for grouping
+  plot.data$month <- lubridate::month(plot.data$date)
+
+  # Create week column, determines which column the block representing a
+  # particular date will be placed in
+  plot.data$week <- lubridate::floor_date(plot.data$date,
                                      unit = 'week')
 
-  data$wday <- forcats::fct_rev(lubridate::wday(data$date, label = TRUE))
+  # Create wday column, determines which row the block representing a particular
+  # date will be placed in. We need to reverse the factor order so that time
+  # flows from top to bottom and from left to right. Without reversing the
+  # factors, we would have time flowing from bottom to top and left to right.
+  plot.data$wday <- forcats::fct_rev(lubridate::wday(plot.data$date, label = TRUE))
 
-  # Constructing Boundary Paths for Time Intervals ----
+  # Get the facets/groups into which the data is to be split
+  facet.groups <- unique(plot.data[,c('year','month')])
 
-  start.date <- as.Date( sprintf('%04d-01-01', min(data$year) ) )
+  # For each group, call the .GetBoundaries function to determine the boundaries
+  # for that group, then turn the resulting list of data.frames into a single
+  # data.frame which can be passed to ggplot
+  paths <-
+    do.call('rbind',
+            apply(groups,
+                     MARGIN = 1,
+                     FUN = function(x){
+                       data.frame('group' = paste0(x, collapse = '_'),
+                      .GetBoundaries(
+                        plot.data[plot.data$year == x['year']
+                                  & plot.data$month == x['month'], ]$date),
+                      stringsAsFactors = FALSE) } ) )
 
-  end.date <- as.Date( sprintf('%04d-01-01', max(data$year) ) )
+  plot.data$N <- plot.data$n / max(plot.data$n)
 
   out <-
-    ggplot(out.fy) +
-    geom_tile(aes(x = ORIG_CONTRACT_WEEK,
-                  y = WDAY,
-                  fill = N,
-                  alpha = as.numeric(DAY_STATUS_TYP == 'A'))) +
-    geom_tile(aes(x = ORIG_CONTRACT_WEEK,
-                  y = WDAY,
-                  alpha = as.numeric(DAY_STATUS_TYP == 'Y')),
-              fill = 'grey85') +
-    geom_tile(aes(x = ORIG_CONTRACT_WEEK,
-                  y = WDAY,
-                  alpha = as.numeric(DAY_STATUS_TYP == 'X')),
-              fill = 'grey85') +
-    geom_tile(aes(x = ORIG_CONTRACT_WEEK,
-                  y = WDAY,
-                  alpha = as.numeric(DAY_STATUS_TYP == 'B')),
-              fill = 'grey85') +
-    geom_tile(aes(x = ORIG_CONTRACT_WEEK,
-                  y = WDAY,
-                  alpha = as.numeric(DAY_STATUS_TYP == 'D')),
-              fill = 'grey85') +
-    geom_path(aes(x = as.Date(X, origin = '1970-01-01'),
-                  y = Y,
-                  group = group.id),
-              data = timeperiodbndry.path,
-              col = 'grey25',
+    ggplot(plot.data) +
+    geom_tile(aes(x = week,
+                  y = wday,
+                  fill = value)) +
+    geom_path(aes(x = x,
+                  y = y,
+                  group = group),
+              data = paths,
+              col = 'white',
               size = 1,
               linejoin = 'mitre',
               lineend = 'butt') +
-    scale_fill_viridis_c(name = 'Gross Contracts') +
+    scale_fill_viridis_c() +
     scale_x_date(name = 'Time', breaks = 'month', date_labels = '%b') +
-    scale_alpha_continuous(guide = 'none', range = c(0, 1)) +
     coord_equal(ratio = 7, expand = FALSE) +
     theme_minimal() +
     theme(panel.background = element_rect(fill = 'white'),
@@ -82,14 +125,13 @@ PlotCalendarHeatmap <- function(data){
 #'
 .GetBoundaries <- function(dates, first = FALSE){
 
-  dates <-
-
   df <- data.frame( 'date' = seq.Date( from = min(dates),
                                        to = max(dates),
-                                       by = 'day' ),
-                    'week' = lubridate::floor_date(dates, unit = 'week'),
-                    'wday' = forcats::fct_rev(lubridate::wday(dates,
-                                                              label = TRUE)))
+                                       by = 'day' ) )
+
+  df$week <- lubridate::floor_date(df$date, unit = 'week')
+
+  df$wday <- forcats::fct_rev(lubridate::wday(dates, label = TRUE))
 
   weekdays <- forcats::fct_rev(lubridate::wday(seq.Date(from = Sys.Date(),
                                                         to = Sys.Date() + 6,
@@ -98,30 +140,36 @@ PlotCalendarHeatmap <- function(data){
 
   minWK <- min(df$week)
 
-  maxWD.minWK <- max(df$wday[df$week == minWK])
+  maxWD.minWK <- as.numeric(max(df$wday[df$week == minWK])) + 0.5
 
   maxWK <- max(df$week)
 
-  minWD.maxWK <- min(df$wday[df$week == maxWK])
+  minWD.maxWK <- as.numeric(min(df$wday[df$week == maxWK])) - 0.5
+
+  minX <- minWK - 3.5
+  maxX <- maxWK + 3.5
+
+  minY <- as.numeric(min(weekdays)) - 0.5
+  maxY <- as.numeric(max(weekdays)) + 0.5
 
   # Creates top, right side, and bottom of boundary
-  path <- data.frame( 'x' = c( minWK + 7,
-                               rep(maxWK, 2),
-                               rep(maxWK - 7, 2),
-                               minWK ),
-                      'y' = c( rep( max(weekdays), 2),
+  path <- data.frame( 'x' = c( minX,
+                               rep(maxX, 2),
+                               rep(maxX - 7, 2),
+                               minX ),
+                      'y' = c( rep( maxY, 2),
                                rep(minWD.maxWK, 2),
-                               rep( min(weekdays), 2) ) )
+                               rep( minY, 2) ) )
 
 
   if( first == TRUE ){
 
     # Adds left side of boundary to path if argument 'first' is TRUE
     path <- rbind(
-      data.frame( 'x' = c( rep(minWK, 2),
-                               minWK + 7 ),
-                  'y' = c(min(weekdays),
-                          rep(maxWD.minWK, 2) ) ),
+      data.frame( 'x' = c( rep(minX, 2),
+                               minX + 7 ),
+                  'y' = c( minY,
+                           rep(maxWD.minWK, 2) ) ),
       path )
 
   }
