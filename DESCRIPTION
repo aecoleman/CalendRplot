@@ -2,12 +2,12 @@ Package: CalendRplot
 Type: Package
 Title: CalendR Plot
 Version: 0.0.0.9000
-Author: 
-Maintainer: andrew.e.coleman@gmail.com
-Description: Creates calendar heatmaps from use supplied data using ggplot.
-
-License: 
+Author@R: person('Andrew', 'Coleman', email = 'andrew.e.coleman@gmail.com', role = c('aut', 'cre'))
+Maintainer@R: person('Andrew', 'Coleman', email = 'andrew.e.coleman@gmail.com')
+Description: Creates calendar heatmaps from user supplied data using ggplot.
+License: MIT
 Encoding: UTF-8
 LazyData: true
 Depends: lubridate,
     ggplot2
+RoxygenNote: 6.1.0

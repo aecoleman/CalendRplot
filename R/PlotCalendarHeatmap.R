@@ -66,7 +66,7 @@ PlotCalendarHeatmap <- function(data){
   # data.frame which can be passed to ggplot
   paths <-
     do.call('rbind',
-            apply(groups,
+            apply(facet.groups,
                      MARGIN = 1,
                      FUN = function(x){
                        data.frame('group' = paste0(x, collapse = '_'),
@@ -74,8 +74,6 @@ PlotCalendarHeatmap <- function(data){
                         plot.data[plot.data$year == x['year']
                                   & plot.data$month == x['month'], ]$date),
                       stringsAsFactors = FALSE) } ) )
-
-  plot.data$N <- plot.data$n / max(plot.data$n)
 
   out <-
     ggplot(plot.data) +
@@ -91,7 +89,8 @@ PlotCalendarHeatmap <- function(data){
               linejoin = 'mitre',
               lineend = 'butt') +
     scale_fill_viridis_c() +
-    scale_x_date(name = 'Time', breaks = 'month', date_labels = '%b') +
+    scale_x_date(name = '', breaks = 'month', date_labels = '%b') +
+    scale_y_discrete(name = '', breaks = c('Mon', 'Wed', 'Fri')) +
     coord_equal(ratio = 7, expand = FALSE) +
     theme_minimal() +
     theme(panel.background = element_rect(fill = 'white'),

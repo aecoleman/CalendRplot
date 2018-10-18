@@ -1,0 +1,77 @@
+---
+title: "CalendRplot"
+author: "Andrew Coleman"
+date: "October 17, 2018"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## CalendRplot
+Package for creating calendar heatmaps in R using `ggplot2`
+
+**This package is currently under development. Features may work incorrectly or not at all.**
+
+Presently, the objective is to create a package which exports a single function. This function's first argument is a `data.frame`, and subsequent arguments give the user some customization options. The function will export a `ggplot` object, which the user can then either further customize or add additional geoms to.
+
+```{r library, echo=FALSE, message=FALSE}
+library(CalendRplot)
+library(data.table)
+library(stringr)
+library(ggplot2)
+
+chi.data <-
+  fread('C:/Users/andre/Downloads/Crimes_-_2001_to_present.csv')
+
+setnames(chi.data, 'Date', 'Datetime')
+
+chi.data[, Date := as.Date(str_extract(Datetime, '^[0-9]{2}/[0-9]{2}/[0-9]{4}'), format = '%m/%d/%Y')]
+
+chi.data[, `Primary Type` := str_replace_all(`Primary Type`, ' ', '_'), by = .(`Primary Type`)]
+
+chi.wide <- dcast(chi.data[, .N, by = .(Date, `Primary Type`)],
+                  Date ~ `Primary Type`,
+                  fill = 0L)
+
+setkeyv(chi.wide, 'Date')
+
+chi.crime <-  chi.data[Date >= as.Date('2016-01-01') 
+           & Date < as.Date('2017-01-01'),
+           .(value = .N),
+           by = .(date = Date)]
+
+```
+
+## Example: Chicago Crime Statistics
+
+```{r plot, fig.height=2}
+
+chi.crime
+
+CalendRplot::PlotCalendarHeatmap( chi.crime ) + 
+  guides(fill = FALSE) + 
+  labs(title = 'Crime in the City of Chicago, 2016')
+
+
+```
+
+Here, the `PlotCalendarHeatmap()` function takes a single input, `chi.data`, and returns a `ggplot` object, which is then modified by the `guides()` and `labs()` functions.
+
+This example uses data from the Chicago Police Department on reported incidents of crime in the City of Chicago from 2001 to present, which you can export in csv format [here](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2). Note that the full file is over 1GB in size.
+
+
+## Planned Features
+
+The following is a list of features which are planned. 
+
+- [x] Create the basic calendar heatmap
+- [x] Create lines to separate months
+- [ ] When multiple years are included, `facet_grid` on years
+- [ ] Improve function syntax, including allowing user to supply a `data.frame`, and then take additional arguments to identify which field is used for the date and which field is used for the values for the heatmapping
+- [ ] Fit and finish on locations of various labels, such as the months
+- [ ] Ability for user to supply their own groupings to be used in facets and in drawing the monthly separations
+- [ ] Quarterly separations?
+- [ ] Alternate separation styles? (lines, snake, alternating surrounding boundaries, etc)
+
