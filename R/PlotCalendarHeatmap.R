@@ -3,11 +3,18 @@
 #' @param data data.frame, which must have a column named \code{date} containing
 #' dates, and at least one other column.
 #'
+#' @param bg.col character, the background color, which is used for the panel
+#' background, panel border, and the lines that divide the months.
+#'
 #' @return
 #' @export
 #'
 #' @examples
-PlotCalendarHeatmap <- function(data){
+PlotCalendarHeatmap <- function(data, bg.col){
+
+  if( missing(bg.col) ){
+    bg.col <- 'white'
+  }
 
   #TODO: Add ability to specify which columns to use for aesthetics:
   # - Fill
@@ -75,26 +82,44 @@ PlotCalendarHeatmap <- function(data){
                                   & plot.data$month == x['month'], ]$date),
                       stringsAsFactors = FALSE) } ) )
 
-  out <-
-    ggplot(plot.data) +
-    geom_tile(aes(x = week,
-                  y = wday,
-                  fill = value)) +
+  # Initialize ggplot object
+  out <- ggplot(data = plot.data)
+
+  # Draw blocks for each day
+  out <- out +
+    geom_tile(mapping = aes(x = week,
+                            y = wday,
+                         fill = value))
+
+  # Draw dividing lines between months
+  out <- out +
     geom_path(aes(x = x,
                   y = y,
-                  group = group),
+              group = group),
               data = paths,
-              col = 'white',
+              col = bg.col,
               size = 1,
               linejoin = 'mitre',
-              lineend = 'butt') +
-    scale_fill_viridis_c() +
-    scale_x_date(name = '', breaks = 'month', date_labels = '%b') +
-    scale_y_discrete(name = '', breaks = c('Mon', 'Wed', 'Fri')) +
-    coord_equal(ratio = 7, expand = FALSE) +
+              lineend = 'butt')
+
+  # Set scales for fill, x, and y
+  out <- out +
+    scale_fill_viridis_c(option = 'magma') +
+    scale_x_date(  name = '',
+                 breaks = 'month',
+            date_labels = '%b') +
+    scale_y_discrete(name = '',
+                   breaks = c('Mon', 'Wed', 'Fri'))
+
+  # Set coordinate ratio, ratio of 7 creates square blocks
+  out <- out +
+    coord_equal(ratio = 7, expand = FALSE)
+
+  # Set theme
+  out <- out +
     theme_minimal() +
-    theme(panel.background = element_rect(fill = 'white'),
-          panel.border = element_rect(fill = NA, color = 'white'),
+    theme(panel.background = element_rect(fill = bg.col),
+          panel.border = element_rect(fill = NA, color = bg.col),
           panel.grid = element_line(color = NA),
           legend.position = 'bottom',
           legend.direction = 'horizontal')

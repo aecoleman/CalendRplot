@@ -4,7 +4,7 @@
 \alias{PlotCalendarHeatmap}
 \title{PlotCalendarHeatmap}
 \usage{
-PlotCalendarHeatmap(data)
+PlotCalendarHeatmap(data, bg.col)
 }
 \arguments{
 \item{data}{data.frame, which must have a column named \code{date} containing

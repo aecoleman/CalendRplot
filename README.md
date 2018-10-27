@@ -36,7 +36,7 @@ chi.crime
     ## 366: 2016-12-31   702
 
 ``` r
-CalendRplot::PlotCalendarHeatmap( chi.crime ) + 
+CalendRplot::PlotCalendarHeatmap( chi.crime ) +
   guides(fill = FALSE) + 
   labs(title = 'Crime in the City of Chicago, 2016')
 ```
