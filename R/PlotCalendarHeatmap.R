@@ -1,203 +1,210 @@
-#' PlotCalendarHeatmap
+#' MinMaxNorm
 #'
-#' @param data data.frame, which must have a column named \code{date} containing
-#' dates, and at least one other column.
+#' Internal function for scaling user provided size values to be between 0 and 1 (inclusive).
 #'
-#' @param bg.col character, the background color, which is used for the panel
-#' background, panel border, and the lines that divide the months.
+#' @param vector numeric, vector of values to be scaled
 #'
-#' @return
+#' @return numeric vector equal in length to the vector provided, with all
+#' values scaled to be between 0 and 1 (inclusive).
+#'
+.MinMaxNorm <- function(vector){
+
+  (vector - min(vector)) / (max(vector) - min(vector))
+
+}
+
+#' Get Path
+#'
+#' Finds the x and y values needed to construct a path to separate adjacent
+#' months in the plot.
+#'
+#' @param plot.data data.table, containing the data that will be used to
+#' construct the calendar plot
+#'
+#' @return data.table containing the path between the different months
+#'
+.GetPath <- function(plot.data){
+
+  path <- plot.data[,
+                    .(min.wday = min(wday.num)),
+                    keyby = .(year.fctr, year.num, month.num, week.yr.num)
+                    ][,
+                      max.week := max(week.yr.num),
+                      by = .(year.fctr, year.num, month.num)
+                      ][week.yr.num == max.week,
+                        .(year.fctr, year.num, month.num, min.wday, week.yr.num)
+                        ][,
+                          .(x = c(rep(week.yr.num, 2), rep(week.yr.num - 1, 2 ) ),
+                            y = c(0L, rep(min.wday, 2), -7L) ),
+                          by = .(year.fctr, year.num, month.num)
+                          ][,
+                            max.month := max(month.num),
+                            by = .(year.fctr, year.num)
+                            ][month.num != max.month,
+                              .(year.fctr, year.num, month.num, x, y)]
+
+  path[, keep := TRUE]
+
+  path[y == -7,
+       keep := x == max(x),
+       by = .(year.fctr, year.num, month.num)]
+
+  path[keep == TRUE, .(year.fctr, year.num, month.num, x, y, year.mon = 100 * year.num + month.num)]
+
+}
+
+#' Make Plot
+#'
+#' @param data data.frame, containing the data to be used to create the plot
+#' @param date.column character, the name of the column in `data` that contains the dates
+#' @param fill character, the name of the column in `data` that will be used to determing the colors in the heatmap
+#' @param bg.col character, the background color for the plot
+#' @param size character or numeric, either the column to be used to determine the size of the squares, or a number that defines the size to use for all squares. Optional, and at present not recommended.
+#' @param missing.is.zero logical, should dates for which no data is presented be assumed to be zero?
+#' @param day.border.col character, the color to be used for the boundaries between days
+#' @param month.border.col character, the color to be used for the boundaries between months
+#'
+#' @return ggplot object containing a calendar heatmap
 #' @export
 #'
-#' @examples
-PlotCalendarHeatmap <- function(data, bg.col){
+#' @import data.table
+#'
+MakePlot <- function(data, date.column, fill, bg.col, size, missing.is.zero = TRUE, day.border.col, month.border.col){
 
-  if( missing(bg.col) ){
-    bg.col <- 'white'
+  data <- as.data.frame(data)
+
+  month.breaks <-
+    data.table(breaks = c(  2.5,   7.0,  11.0,  15.5,  20.0,  24.0,
+                            28.5,  33.0,  37.5,  41.5,  46.0,  50.5),
+               labels = c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec') )
+
+  wday.breaks <- data.table(breaks = c( -1.5,  -3.5,  -5.5),
+                            labels = c('Mon', 'Wed', 'Fri') )
+
+  year.ends <-
+    list('start' = lubridate::floor_date(min(data[,date.column]), unit = 'year'),
+         'end' = lubridate::ceiling_date(max(data[,date.column]), unit = 'year') - 1L )
+
+  plot.data <-
+    data.table(
+      date = seq(from = year.ends$start,
+                 to = year.ends$end,
+                 by = 'day') )
+
+  plot.data[,  wday.num := -lubridate::wday(date) ]
+  plot.data[, month.num := lubridate::month(date) ]
+  plot.data[,  year.num := lubridate::year(date) ]
+
+  plot.data[, year.fctr := factor(year.num, levels = seq(from = max(year.num),
+                                                         to = min(year.num)) )]
+
+  plot.data[,  week.yr.num := data.table::frank(
+    lubridate::floor_date(date,
+                          unit = 'week'),
+    ties.method = 'dense'),
+    by = .(year.num) ]
+
+  plot.data <-
+    merge(plot.data,
+          data,
+          by.x = 'date',
+          by.y = date.column,
+          all.x = TRUE)
+
+  if( missing.is.zero == TRUE ){
+
+    i.na <- plot.data[is.na(get(fill)), which = TRUE]
+    set(plot.data, i = i.na, j = fill, value = 0)
+    rm(i.na)
+
   }
 
-  #TODO: Add ability to specify which columns to use for aesthetics:
-  # - Fill
-  # - Color (Maybe?)
-  # - Size
-  # - Alpha
+  if( missing(size) ){
 
-  #TODO: Add option for user to specify that they have included columns meant
-  # for grouping and/or faceting
+    size <- 1
 
-  # TODO: Add considerations for if the user has included their own groupings
+  } else if(is.character(size)){
 
-  # Get the first day of the first month for which data is supplied
-  start.date <-
-    as.Date( lubridate::floor_date( min(data$date), unit = 'month' ) )
+    temp.var <- .MinMaxNorm(plot.data[, ..size])
 
-  # Get the last day of the last month for which data is supplied, by finding
-  # the first day of the first month after the provided dates and then
-  # subtracting one day
-  end.date <-
-    as.Date( lubridate::ceiling_date( max(data$date), unit = 'month' ) - 1)
+    plot.data[, size := sqrt(temp.var) ]
 
-  # Make data.frame with all days, to be joined with user supplied data
-  plot.data <- data.frame( 'date' = seq.Date( from = start.date,
-                                              to = end.date,
-                                              by = 'day' ) )
+  } else if( is.numeric(size) ){
 
-  # Merge list of all days with the user supplied data
-  plot.data <- merge( plot.data,
-                      data,
-                      by = 'date',
-                      all = TRUE)
+    plot.data[, size := ..size ]
 
-  # Create year column, for grouping
-  plot.data$year <- lubridate::year(plot.data$date)
+  }
 
-  # Create month column, for grouping
-  plot.data$month <- lubridate::month(plot.data$date)
+  month.border.path <- .GetPath(plot.data)
 
-  # Create week column, determines which column the block representing a
-  # particular date will be placed in
-  plot.data$week <- lubridate::floor_date(plot.data$date,
-                                     unit = 'week')
+  g <- ggplot(plot.data)
 
-  # Create wday column, determines which row the block representing a particular
-  # date will be placed in. We need to reverse the factor order so that time
-  # flows from top to bottom and from left to right. Without reversing the
-  # factors, we would have time flowing from bottom to top and left to right.
-  plot.data$wday <- forcats::fct_rev(lubridate::wday(plot.data$date, label = TRUE))
+  g <- g +
+    geom_tile(aes(x = week.yr.num - 0.5,
+                  y = wday.num + 0.5,
+                  width = size,
+                  height = size,
+                  fill = get(fill) ) )
 
-  # Get the facets/groups into which the data is to be split
-  facet.groups <- unique(plot.data[,c('year','month')])
+  if( !missing(day.border.col) ){
 
-  # For each group, call the .GetBoundaries function to determine the boundaries
-  # for that group, then turn the resulting list of data.frames into a single
-  # data.frame which can be passed to ggplot
-  paths <-
-    do.call('rbind',
-            apply(facet.groups,
-                     MARGIN = 1,
-                     FUN = function(x){
-                       data.frame('group' = paste0(x, collapse = '_'),
-                      .GetBoundaries(
-                        plot.data[plot.data$year == x['year']
-                                  & plot.data$month == x['month'], ]$date),
-                      stringsAsFactors = FALSE) } ) )
+    g <- g +
+      geom_vline(aes(xintercept = x),
+                 data = data.frame('x' = seq(from = 1,
+                                             to = 52)),
+                 col = day.border.col,
+                 size = 0.5) +
+      geom_segment(
+        aes(   y = y,
+               yend = y,
+               x = x,
+               xend = xend),
+        data = plot.data[,.(x = min(week.yr.num) - 1,
+                            xend = max(week.yr.num) ),
+                         by = .(y = wday.num, year.fctr)],
+        col = day.border.col,
+        size = 0.5)
 
-  # Initialize ggplot object
-  out <- ggplot(data = plot.data)
+  }
 
-  # Draw blocks for each day
-  out <- out +
-    geom_tile(mapping = aes(x = week,
-                            y = wday,
-                         fill = value))
-
-  # Draw dividing lines between months
-  out <- out +
-    geom_path(aes(x = x,
+  g <- g +
+    geom_path(data = month.border.path,
+              aes(x = x,
                   y = y,
-              group = group),
-              data = paths,
-              col = bg.col,
-              size = 1,
-              linejoin = 'mitre',
-              lineend = 'butt')
+                  group = month.num),
+              col = month.border.col,
+              size = 1)
 
-  # Set scales for fill, x, and y
-  out <- out +
-    scale_fill_viridis_c(option = 'magma') +
-    scale_x_date(  name = '',
-                 breaks = 'month',
-            date_labels = '%b') +
-    scale_y_discrete(name = '',
-                   breaks = c('Mon', 'Wed', 'Fri'))
 
-  # Set coordinate ratio, ratio of 7 creates square blocks
-  out <- out +
-    coord_equal(ratio = 7, expand = FALSE)
-
-  # Set theme
-  out <- out +
+  g <- g +
+    coord_equal(ratio = 1,
+                expand = FALSE) +
+    facet_grid(year.fctr ~ .,
+               switch = 'y') +
+    scale_y_continuous(name = NULL,
+                       breaks = wday.breaks$breaks,
+                       labels = wday.breaks$labels) +
+    scale_x_continuous(name = NULL,
+                       breaks = month.breaks$breaks,
+                       labels = month.breaks$labels) +
+    scale_fill_viridis_c(option = 'magma',
+                         name = fill,
+                         guide = guide_colorbar(title = fill,
+                                                nbin = 80,
+                                                barheight = grid::unit(0.25, units = 'npc'),
+                                                draw.ulim = TRUE,
+                                                draw.llim = TRUE,
+                                                frame.colour = 'grey50',
+                                                ticks.colour = 'grey50')) +
     theme_minimal() +
     theme(panel.background = element_rect(fill = bg.col),
           panel.border = element_rect(fill = NA, color = bg.col),
           panel.grid = element_line(color = NA),
-          legend.position = 'bottom',
-          legend.direction = 'horizontal')
+          legend.position = 'right',
+          legend.direction = 'vertical',
+          strip.placement = 'outside')
 
-  return(out)
-
-}
-
-
-#' GetBoundaries
-#'
-#' This function takes a set of dates and returns the set of coordinates that
-#' can be used to draw a polygon around the specified set of dates when arranged
-#' in a grid as in the \code{CalendarHeatmap} function.
-#'
-#' @param dates Date, the dates that belong to the interval. Can also pass just
-#' the first and last date.
-#' @param first logical, is this the first of a set of intervals? When TRUE, the
-#' function will return a path that encloses the dates. When \code{FALSE}, the function
-#' will return a path that encloses the dates on 3 sides only. This is useful
-#' because it prevents overplotting when one interval's right boundary is
-#' another interval's left boundary.
-#'
-#' @return data.frame, containing x and y values to be used in a call to the
-#' \code{ggplot::geom_path} function
-#' @export
-#'
-.GetBoundaries <- function(dates, first = FALSE){
-
-  df <- data.frame( 'date' = seq.Date( from = min(dates),
-                                       to = max(dates),
-                                       by = 'day' ) )
-
-  df$week <- lubridate::floor_date(df$date, unit = 'week')
-
-  df$wday <- forcats::fct_rev(lubridate::wday(dates, label = TRUE))
-
-  weekdays <- forcats::fct_rev(lubridate::wday(seq.Date(from = Sys.Date(),
-                                                        to = Sys.Date() + 6,
-                                                        by = 'day'),
-                                                        label = TRUE) )
-
-  minWK <- min(df$week)
-
-  maxWD.minWK <- as.numeric(max(df$wday[df$week == minWK])) + 0.5
-
-  maxWK <- max(df$week)
-
-  minWD.maxWK <- as.numeric(min(df$wday[df$week == maxWK])) - 0.5
-
-  minX <- minWK - 3.5
-  maxX <- maxWK + 3.5
-
-  minY <- as.numeric(min(weekdays)) - 0.5
-  maxY <- as.numeric(max(weekdays)) + 0.5
-
-  # Creates top, right side, and bottom of boundary
-  path <- data.frame( 'x' = c( minX,
-                               rep(maxX, 2),
-                               rep(maxX - 7, 2),
-                               minX ),
-                      'y' = c( rep( maxY, 2),
-                               rep(minWD.maxWK, 2),
-                               rep( minY, 2) ) )
-
-
-  if( first == TRUE ){
-
-    # Adds left side of boundary to path if argument 'first' is TRUE
-    path <- rbind(
-      data.frame( 'x' = c( rep(minX, 2),
-                               minX + 7 ),
-                  'y' = c( minY,
-                           rep(maxWD.minWK, 2) ) ),
-      path )
-
-  }
-
-  return( path )
+  g
 
 }
