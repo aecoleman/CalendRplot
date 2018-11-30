@@ -1,7 +1,7 @@
 ---
 title: "CalendRplot"
 author: "Andrew Coleman"
-date: "October 17, 2018"
+date: "November 24, 2018"
 output: github_document
 ---
 
@@ -16,62 +16,88 @@ Package for creating calendar heatmaps in R using `ggplot2`
 
 Presently, the objective is to create a package which exports a single function. This function's first argument is a `data.frame`, and subsequent arguments give the user some customization options. The function will export a `ggplot` object, which the user can then either further customize or add additional geoms to.
 
-```{r library, echo=FALSE, message=FALSE}
+
+
+## Example: Chicago Crime Statistics
+
+In this example, we use data from the Chicago Police Department on reported incidents of crime in the City of Chicago from 2001 to present, which you can export in csv format [here](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2). Please note that the full file is over 1GB in size. 
+
+A small amount of pre-processing is necessary before the data provided by the Chicago Police Department is ready to visualize. First, there is a column named `Date` that contains date-time information (in character form). We will first rename this column as `Datetime`, to more accurately reflect its contents. Then we will create a column named `Date` to store the date extracted from the `Datetime` column. Following that, we select only those rows that are during the years 2013 to 2017, and those crimes which are violent.
+
+```{r message=FALSE}
 library(CalendRplot)
 library(data.table)
 library(stringr)
 library(ggplot2)
 
 chi.data <-
-  fread('C:/Users/andre/Downloads/Crimes_-_2001_to_present.csv')
+  fread('ignore_data/Crimes_-_2001_to_present.csv')
 
 setnames(chi.data, 'Date', 'Datetime')
 
-chi.data[, Date := as.Date(str_extract(Datetime, '^[0-9]{2}/[0-9]{2}/[0-9]{4}'), format = '%m/%d/%Y')]
+chi.data[, Date := as.Date(str_extract(Datetime, '^[0-9]{2}/[0-9]{2}/[0-9]{4}'), 
+                           format = '%m/%d/%Y')]
 
-chi.data[, `Primary Type` := str_replace_all(`Primary Type`, ' ', '_'), by = .(`Primary Type`)]
-
-chi.wide <- dcast(chi.data[, .N, by = .(Date, `Primary Type`)],
-                  Date ~ `Primary Type`,
-                  fill = 0L)
-
-setkeyv(chi.wide, 'Date')
-
-chi.crime <-  chi.data[Date >= as.Date('2016-01-01') 
-           & Date < as.Date('2017-01-01'),
-           .(value = .N),
-           by = .(date = Date)]
+chi.crime <-  
+  chi.data[Date >= as.Date('2013-01-01') 
+           & Date < as.Date('2018-01-01') 
+           & `Primary Type` %in% c('ROBBERY', 'DOMESTIC VIOLENCE', 'ASSAULT',
+                                   'CRIM SEXUAL ASSAULT', 'BATTERY', 'HOMICIDE'),
+           .(`Number of Crimes` = .N),
+           keyby = .(Date)]
 
 ```
+Let's take a quick look at the contents of the `chi.crime` variable that was created in the last command of the previous code block.
 
-## Example: Chicago Crime Statistics
-
-```{r plot, fig.height=2}
-
+```{r}
 chi.crime
 
-CalendRplot::PlotCalendarHeatmap( chi.crime ) +
-  guides(fill = FALSE) + 
-  labs(title = 'Crime in the City of Chicago, 2016')
+```
+
+We see that it gives a table, with each row containing a date along with the number of violent crimes committed in Chicago on that date.
+
+Now we will use the `PlotCalendarHeatmap()` function, provided by this package, to plot the `chi.crime` data.
+
+Here, the `PlotCalendarHeatmap()` function takes as arguments a `data.frame` type object, in this example `chi.crime`, as well as a `character` type object indicating which column contains the date information, and a second `character` type object which indicates which column contains the information to be used to determine the fill color for each day. The function then returns a `ggplot` object, which is then modified by the `scale_fill_viridis_c()` function (which alters the color gradient and legend), and the `labs()` function (which gives the plot its title).
+
+```{r plot, fig.height=4.5, warning=FALSE}
+
+CalendRplot::PlotCalendarHeatmap(data = chi.crime,
+                                 date.column = 'Date',
+                                 fill = 'Number of Crimes') + 
+      ggplot2::scale_fill_viridis_c(
+      limits = c(75, 1.05 * chi.crime[,max(`Number of Crimes`)]),
+       trans = 'identity',
+      option = 'magma',
+        name = 'Number of Crimes',
+       guide = ggplot2::guide_colorbar(title = 'Number of Crimes',
+                               nbin = 80,
+                          barheight = grid::unit(    x = 0.25,
+                                                 units = 'npc'),
+                              draw.ulim = TRUE,
+                              draw.llim = TRUE,
+                              frame.colour = 'grey50',
+                              ticks.colour = 'grey50')) + 
+  ggplot2::labs(title = 'Violent Crime in the City of Chicago, 2013-2017')
 
 
 ```
 
-Here, the `PlotCalendarHeatmap()` function takes a single input, `chi.data`, and returns a `ggplot` object, which is then modified by the `guides()` and `labs()` functions.
+The graphic allows us to identify several potential patterns in the data that would not be readily apparent if we were perusing the numbers in a table. First, it appears as though violent crime is more frequent during the summer months, as compared to the winter months. Second, weekends appear to have higher numbers of violent crimes compared to their weeks. Third, it looks as though some holidays may have an effect on the number of crimes committed. In particular, New Year's Day (January 1st) and to a lesser extent Independence Day (July 4th, as well as the following day, July 5th) seem to have higher rates of crime than we would otherwise expect. Also, for each of the years, there is a weekend in mid-March that appears to have an increased number of violent crimes, which may coincide with the city's annual St. Patrick's Day festivities.
 
-This example uses data from the Chicago Police Department on reported incidents of crime in the City of Chicago from 2001 to present, which you can export in csv format [here](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2). Note that the full file is over 1GB in size.
-
+The graphic is not a means to determine whether any of the relationships presented in the previous paragraph actually exist, but it can be a valuable tool for determining what possible relationships could be worth investigating with more mathematical means.
 
 ## Planned Features
 
-The following is a list of features which are planned. 
+The following is a list of features which are planned.
 
 - [x] Create the basic calendar heatmap
 - [x] Create lines to separate months
-- [ ] When multiple years are included, `facet_grid` on years
-- [ ] Improve function syntax, including allowing user to supply a `data.frame`, and then take additional arguments to identify which field is used for the date and which field is used for the values for the heatmapping
-- [ ] Fit and finish on locations of various labels, such as the months
+- [x] When multiple years are included, `facet_grid` on years
+- [x] Improve function syntax, including allowing user to supply a `data.frame`, and then take additional arguments to identify which field is used for the date and which field is used for the values for the heatmapping
+- [x] Fit and finish on locations of various labels
+
 - [ ] Ability for user to supply their own groupings to be used in facets and in drawing the monthly separations
 - [ ] Quarterly separations?
-- [ ] Alternate separation styles? (lines, snake, alternating surrounding boundaries, etc)
+- [ ] ~~Alternate separation styles? (lines, snake, alternating surrounding boundaries, etc)~~
 

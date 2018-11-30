@@ -53,7 +53,7 @@
 
 }
 
-#' Make Plot
+#' Plot Calendar Heatmap
 #'
 #' @param data data.frame, containing the data to be used to create the plot
 #' @param date.column character, the name of the column in `data` that contains the dates
@@ -69,7 +69,13 @@
 #'
 #' @import data.table
 #'
-MakePlot <- function(data, date.column, fill, bg.col, size, missing.is.zero = TRUE, day.border.col, month.border.col){
+PlotCalendarHeatmap <- function(data, date.column, fill, bg.col, size, missing.is.zero = TRUE, day.border.col, month.border.col){
+
+  if(missing(month.border.col)) month.border.col <- 'white'
+
+  if(missing(day.border.col)) day.border.col <- 'black'
+
+  if(missing(bg.col)) bg.col <- 'white'
 
   data <- as.data.frame(data)
 
@@ -145,28 +151,35 @@ MakePlot <- function(data, date.column, fill, bg.col, size, missing.is.zero = TR
                   y = wday.num + 0.5,
                   width = size,
                   height = size,
-                  fill = get(fill) ) )
+                  fill = get(fill)),
+              col = day.border.col,
+              size = 0.5)
 
-  if( !missing(day.border.col) ){
-
-    g <- g +
-      geom_vline(aes(xintercept = x),
-                 data = data.frame('x' = seq(from = 1,
-                                             to = 52)),
-                 col = day.border.col,
-                 size = 0.5) +
-      geom_segment(
-        aes(   y = y,
-               yend = y,
-               x = x,
-               xend = xend),
-        data = plot.data[,.(x = min(week.yr.num) - 1,
-                            xend = max(week.yr.num) ),
-                         by = .(y = wday.num, year.fctr)],
-        col = day.border.col,
-        size = 0.5)
-
-  }
+#   if( !missing(day.border.col) ){
+#
+#     g <- g +
+#       geom_segment(
+#         aes(x = x,
+#             xend = x,
+#             y = y,
+#             yend = yend),
+#         data = plot.data[,.(y = min(wday.num) - 1,
+#                             yend = max(wday.num)),
+#                          by = .(x = week.yr.num, year.fctr)],
+#                  col = day.border.col,
+#                  size = 0.5) +
+#       geom_segment(
+#         aes(   y = y,
+#                yend = y,
+#                x = x,
+#                xend = xend),
+#         data = plot.data[,.(x = min(week.yr.num) - 1,
+#                             xend = max(week.yr.num) ),
+#                          by = .(y = wday.num, year.fctr)],
+#         col = day.border.col,
+#         size = 0.5)
+#
+#   }
 
   g <- g +
     geom_path(data = month.border.path,
@@ -179,6 +192,8 @@ MakePlot <- function(data, date.column, fill, bg.col, size, missing.is.zero = TR
 
   g <- g +
     coord_equal(ratio = 1,
+                xlim = c(plot.data[,min(week.yr.num)] - 1.1, plot.data[,max(week.yr.num)] + 0.1),
+                ylim = c(plot.data[,min(wday.num)] - 0.1, plot.data[,max(wday.num)] + 1.1),
                 expand = FALSE) +
     facet_grid(year.fctr ~ .,
                switch = 'y') +
@@ -188,22 +203,27 @@ MakePlot <- function(data, date.column, fill, bg.col, size, missing.is.zero = TR
     scale_x_continuous(name = NULL,
                        breaks = month.breaks$breaks,
                        labels = month.breaks$labels) +
-    scale_fill_viridis_c(option = 'magma',
-                         name = fill,
-                         guide = guide_colorbar(title = fill,
-                                                nbin = 80,
-                                                barheight = grid::unit(0.25, units = 'npc'),
-                                                draw.ulim = TRUE,
-                                                draw.llim = TRUE,
-                                                frame.colour = 'grey50',
-                                                ticks.colour = 'grey50')) +
+    scale_fill_viridis_c(
+      limits = c(0, plot.data[,max(get(fill))]*1.05),
+      option = 'magma',
+        name = fill,
+       guide = guide_colorbar(title = fill,
+                               nbin = 80,
+                          barheight = grid::unit(    x = 0.25,
+                                                 units = 'npc'),
+                              draw.ulim = TRUE,
+                              draw.llim = TRUE,
+                              frame.colour = 'grey50',
+                              ticks.colour = 'grey50')) +
     theme_minimal() +
     theme(panel.background = element_rect(fill = bg.col),
           panel.border = element_rect(fill = NA, color = bg.col),
           panel.grid = element_line(color = NA),
           legend.position = 'right',
           legend.direction = 'vertical',
-          strip.placement = 'outside')
+          strip.placement = 'outside',
+          text = element_text(color = 'black'),
+          axis.text = element_text(color = 'black'))
 
   g
 
